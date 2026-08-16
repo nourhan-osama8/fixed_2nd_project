@@ -1,24 +1,16 @@
-<<<<<<< HEAD
-from pathlib import Path
-from pydantic_settings import BaseSettings
-from pydantic import field_validator
-from typing import List, Optional
-
-_ENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
-=======
 from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import List, Optional
 
 from pydantic_settings import BaseSettings
-from typing import List
->>>>>>> origin/main
 
 # ── Backend root directory (absolute, regardless of CWD) ──────────────────────
 # This file lives at: backend/app/core/config.py
 # BACKEND_ROOT  →  backend/
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
+_ENV_PATH = _BACKEND_ROOT / ".env"
 
 
 class Settings(BaseSettings):
@@ -45,34 +37,29 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:8501"
     BACKEND_HOST: str = "0.0.0.0"
     BACKEND_PORT: int = 8000
-<<<<<<< HEAD
-    PUBLIC_BASE_URL: str = "http://localhost:8000"
-
-    # Phase 2 — AI
-    OPENAI_API_KEY: Optional[str] = None
-    EMBEDDING_MODEL: Optional[str] = None
-    VECTOR_DB_URL: Optional[str] = None
-
-    # Phase 3 — Telephony (Twilio legacy transport)
-    TWILIO_ACCOUNT_SID: Optional[str] = None
-    TWILIO_AUTH_TOKEN: Optional[str] = None
-    TWILIO_PHONE_NUMBER: Optional[str] = None
-
-    # Telegram Bot Transport
-    TELEGRAM_BOT_TOKEN: Optional[str] = None
-    TELEGRAM_WEBHOOK_SECRET: Optional[str] = None
-=======
-    # Public base URL used by Twilio webhooks — set to your ngrok/tunnel URL in production
     PUBLIC_BASE_URL: str = "http://localhost:8000"
 
     # ── AI / LLM ──────────────────────────────────────────────────────────────
     GROQ_API_KEY: str = ""
     GROQ_MODEL: str = "openai/gpt-oss-20b"
     TAVILY_API_KEY: str = ""
+    OPENAI_API_KEY: Optional[str] = None
+    VECTOR_DB_URL: Optional[str] = None
 
     # ── RAG ───────────────────────────────────────────────────────────────────
     RAG_DOCS_DIR: str = "uploads/rag_docs"
     EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+
+    # ── Telephony: Vonage (Sole Voice Provider) ──────────────────────────────
+    VONAGE_API_KEY: Optional[str] = None
+    VONAGE_API_SECRET: Optional[str] = None
+    VONAGE_APPLICATION_ID: Optional[str] = None
+    VONAGE_PRIVATE_KEY_PATH: str = "app/telephony/vonage/private.key"
+    VONAGE_PHONE_NUMBER: Optional[str] = None
+
+    # ── Testing Transport: Telegram ───────────────────────────────────────────
+    TELEGRAM_BOT_TOKEN: Optional[str] = None
+    TELEGRAM_WEBHOOK_SECRET: Optional[str] = None
 
     # ── Resolved absolute paths ────────────────────────────────────────────────
     @property
@@ -86,7 +73,12 @@ class Settings(BaseSettings):
         """Absolute path to the RAG documents directory."""
         p = Path(self.RAG_DOCS_DIR)
         return str(p if p.is_absolute() else _BACKEND_ROOT / p)
->>>>>>> origin/main
+
+    @property
+    def vonage_private_key_abs(self) -> str:
+        """Absolute path to the Vonage application private key file."""
+        p = Path(self.VONAGE_PRIVATE_KEY_PATH)
+        return str(p if p.is_absolute() else _BACKEND_ROOT / p)
 
     @property
     def allowed_origins_list(self) -> List[str]:
@@ -100,4 +92,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-

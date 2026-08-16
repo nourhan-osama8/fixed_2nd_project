@@ -1,30 +1,9 @@
 import os
+import threading
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-<<<<<<< HEAD
-from app.api.routes import (
-    auth,
-    users,
-    customers,
-    cases,
-    calls,
-    followups,
-    documents,
-    reports,
-    audit_logs,
-    health,
-)
-from app.telephony.webhooks import (
-    incoming as telephony_incoming,
-    speech as telephony_speech,
-    status as telephony_status,
-    telegram as telephony_telegram,
-)
-=======
-from app.telephony.webhooks import incoming as telephony_incoming
->>>>>>> origin/main
 
 from app.core.config import settings
 from app.core.logging import setup_logging, logger
@@ -43,6 +22,10 @@ from app.api.routes import (
     health,
     ai,
     success_metrics,
+)
+from app.telephony.webhooks import (
+    vonage as telephony_vonage,
+    telegram as telephony_telegram,
 )
 
 
@@ -78,7 +61,6 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             logger.error("RAG: startup build failed: %s", exc)
 
-    import threading
     threading.Thread(target=_warm_rag, daemon=True, name="rag-startup").start()
 
     yield
@@ -86,11 +68,10 @@ async def lifespan(app: FastAPI):
     logger.info("Backend shutting down.")
 
 
-
 app = FastAPI(
     title=settings.APP_NAME,
     version="1.0.0",
-    description="AI-powered Telecom/ISP Contact Center — Phase 1 API",
+    description="AI-powered Telecom/ISP Contact Center API",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
@@ -109,26 +90,20 @@ app.add_middleware(
 PREFIX = "/api/v1"
 
 app.include_router(health.router,              prefix=PREFIX, tags=["Health"])
-app.include_router(auth.router,               prefix=PREFIX, tags=["Authentication"])
-app.include_router(users.router,              prefix=PREFIX, tags=["Users"])
-app.include_router(customers.router,          prefix=PREFIX, tags=["Customers"])
-app.include_router(cases.router,              prefix=PREFIX, tags=["Cases"])
-app.include_router(calls.router,              prefix=PREFIX, tags=["Calls"])
-app.include_router(followups.router,          prefix=PREFIX, tags=["Follow-ups"])
-app.include_router(documents.router,          prefix=PREFIX, tags=["Documents"])
-app.include_router(reports.router,            prefix=PREFIX, tags=["Reports"])
-app.include_router(audit_logs.router,         prefix=PREFIX, tags=["Audit Logs"])
-app.include_router(ai.router,                prefix=PREFIX, tags=["AI Assistant"])
-app.include_router(telephony_incoming.router, prefix=PREFIX, tags=["Telephony"])
-<<<<<<< HEAD
-app.include_router(telephony_speech.router,   prefix=PREFIX, tags=["Telephony"])
-app.include_router(telephony_status.router,   prefix=PREFIX, tags=["Telephony"])
-app.include_router(telephony_telegram.router, prefix=PREFIX, tags=["Telephony"])
-=======
-app.include_router(success_metrics.router,    prefix=PREFIX, tags=["Success Metrics"])
+app.include_router(auth.router,                prefix=PREFIX, tags=["Authentication"])
+app.include_router(users.router,               prefix=PREFIX, tags=["Users"])
+app.include_router(customers.router,           prefix=PREFIX, tags=["Customers"])
+app.include_router(cases.router,               prefix=PREFIX, tags=["Cases"])
+app.include_router(calls.router,               prefix=PREFIX, tags=["Calls"])
+app.include_router(followups.router,           prefix=PREFIX, tags=["Follow-ups"])
+app.include_router(documents.router,           prefix=PREFIX, tags=["Documents"])
+app.include_router(reports.router,             prefix=PREFIX, tags=["Reports"])
+app.include_router(audit_logs.router,          prefix=PREFIX, tags=["Audit Logs"])
+app.include_router(ai.router,                  prefix=PREFIX, tags=["AI Assistant"])
+app.include_router(success_metrics.router,     prefix=PREFIX, tags=["Success Metrics"])
+app.include_router(telephony_vonage.router,    prefix=PREFIX, tags=["Telephony (Vonage)"])
+app.include_router(telephony_telegram.router,  prefix=PREFIX, tags=["Telephony (Telegram)"])
 
-
->>>>>>> origin/main
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):

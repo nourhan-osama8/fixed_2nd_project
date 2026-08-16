@@ -12,7 +12,12 @@ class CaseRepository:
     def get_by_id(self, case_id: UUID) -> Optional[Case]:
         return (
             self.db.query(Case)
-            .options(joinedload(Case.customer), joinedload(Case.assigned_agent))
+            .options(
+                joinedload(Case.customer),
+                joinedload(Case.assigned_agent),
+                joinedload(Case.calls),
+                joinedload(Case.followups),
+            )
             .filter(Case.id == case_id)
             .first()
         )
@@ -35,6 +40,24 @@ class CaseRepository:
         if status:
             query = query.filter(Case.status == status)
         return query.order_by(Case.created_at.desc()).offset(skip).limit(limit).all()
+
+    def get_ai_followup_cases(self, limit: int = 100) -> List[Case]:
+        """
+        Retrieves existing cases eligible for AI outbound follow-up calls
+        (status == CaseStatus.AI_FOLLOW_UP_SCHEDULED).
+        """
+        return (
+            self.db.query(Case)
+            .options(
+                joinedload(Case.customer),
+                joinedload(Case.calls),
+                joinedload(Case.followups),
+            )
+            .filter(Case.status == CaseStatus.AI_FOLLOW_UP_SCHEDULED)
+            .order_by(Case.created_at.asc())
+            .limit(limit)
+            .all()
+        )
 
     def count(
         self,

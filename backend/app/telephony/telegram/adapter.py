@@ -1,13 +1,19 @@
 """
 Telegram Transport Adapter for NileConnect Voice-AI Architecture.
 
-Acts as the transport bridge between the Telegram Bot API and the existing
+Acts as the testing transport bridge between the Telegram Bot API and the existing
 application layer (STT, AI classifier, Call Flows, Database Models, and TTS).
-Preserves existing call-flow logic, session tracking, and database models.
+
+CRITICAL RULE:
+- NEVER creates a new Case.
+- Binds strictly to existing eligible Cases in PostgreSQL (status == AI_FOLLOW_UP_SCHEDULED).
+- Reuses existing Cases, AIFollowups, and Calls.
 """
+from __future__ import annotations
+
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
-from uuid import UUID, uuid4
+from typing import Dict, Any, Optional, Tuple
+from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -21,24 +27,31 @@ from app.repositories.call_repository import CallRepository
 from app.repositories.case_repository import CaseRepository
 from app.repositories.customer_repository import CustomerRepository
 from app.repositories.followup_repository import FollowupRepository
+from app.services.ai_followup_service import AIFollowupService
 from app.telephony.call_flows.no_flow import handle_no
-from app.telephony.call_flows.unknown_flow import MAX_ATTEMPTS
+from app.telephony.call_flows.unknown_flow import MAX_ATTEMPTS, handle_unknown
 from app.telephony.call_flows.yes_flow import handle_yes
 from app.telephony.stt.arabic_classifier import classify_response
 from app.telephony.stt.stt_service import get_stt_service
 from app.telephony.tts.tts_service import get_tts_service
 from app.telephony.telegram.client import get_telegram_client
-from app.telephony.twilio.response import (
-    GREETING_TEXT,
+from app.telephony.vonage.response import (
+    GREETING_DEFAULT_TEXT,
     NOT_UNDERSTOOD_TEXT,
     GOODBYE_RESOLVED_TEXT,
     GOODBYE_ESCALATE_TEXT,
 )
 
+NO_SCHEDULED_CASES_MSG = (
+    "أهلاً بك في نظام نايل كونكت لاختبار المتابعة الذكية.\n"
+    "لا توجد حالياً أي حالات مجدولة للمتابعة (AI_FOLLOW_UP_SCHEDULED).\n"
+    "برجاء جدولة متابعة لحالة قائمة من لوحة التحكم لتجربة الاختبار."
+)
+
 
 class TelegramAdapter:
     """
-    Session & Orchestration manager for Telegram transport.
+    Session & Orchestration manager for Telegram testing transport.
     """
     def __init__(self, db: Session):
         self.db = db
@@ -50,15 +63,18 @@ class TelegramAdapter:
         self.case_repo = CaseRepository(db)
         self.followup_repo = FollowupRepository(db)
         self.call_repo = CallRepository(db)
+        self.ai_service = AIFollowupService(db)
 
-    def _get_or_create_session(
+    def _get_or_bind_session(
         self,
         chat_id: int | str,
         user_info: Optional[Dict[str, Any]] = None,
-    ) -> tuple[AIFollowup, Call]:
+    ) -> Tuple[Optional[AIFollowup], Optional[Call], Optional[Case]]:
         """
-        Retrieves or establishes the active AIFollowup and Call records for this Telegram user.
-        Preserves customer, case, and call flow tracking in PostgreSQL.
+        Retrieves an active follow-up session or binds to an existing eligible Case
+        (CaseStatus.AI_FOLLOW_UP_SCHEDULED).
+        
+        CRITICAL: NEVER creates a new Case.
         """
         user_name = "Telegram User"
         if user_info:
@@ -68,10 +84,9 @@ class TelegramAdapter:
 
         phone_num = f"TG_{chat_id}"
 
-        # 1. Ensure Customer exists
+        # 1. Ensure/get Customer for this Telegram user
         customer = self.customer_repo.get_by_phone(phone_num)
         if not customer:
-            # Check if there is an existing demo customer we can link, or create a new one
             customer = Customer(
                 name=user_name,
                 phone=phone_num,
@@ -79,60 +94,65 @@ class TelegramAdapter:
             )
             customer = self.customer_repo.create(customer)
 
-        # 2. Find open follow-up or create one
-        open_followups = self.followup_repo.get_all(
+        # 2. Check if customer already has an active follow-up in progress
+        active_followups = self.followup_repo.get_all(
             customer_id=customer.id,
             status=FollowupStatus.IN_PROGRESS,
             limit=1,
         )
-        if not open_followups:
-            scheduled_followups = self.followup_repo.get_all(
-                customer_id=customer.id,
-                status=FollowupStatus.SCHEDULED,
-                limit=1,
+        if active_followups:
+            followup = active_followups[0]
+            case = self.case_repo.get_by_id(followup.case_id)
+            call = self.call_repo.get_by_id(followup.call_id) if followup.call_id else None
+            return followup, call, case
+
+        # 3. Find an existing eligible Case in PostgreSQL
+        eligible_cases = self.case_repo.get_ai_followup_cases(limit=1)
+        if not eligible_cases:
+            logger.info("[Telegram] No eligible AI_FOLLOW_UP_SCHEDULED cases found in DB.")
+            return None, None, None
+
+        case = eligible_cases[0]
+        logger.info("[Telegram] Binding Telegram session to existing Case %s (Issue: %r)", case.id, case.issue)
+
+        # 4. Find or reuse AIFollowup for this existing Case
+        now = datetime.now(timezone.utc)
+        followup = self.followup_repo.get_active_by_case_id(case.id)
+        if not followup:
+            followup = AIFollowup(
+                case_id=case.id,
+                customer_id=case.customer_id,
+                scheduled_at=now,
+                status=FollowupStatus.IN_PROGRESS,
+                attempt_number=1,
             )
-            if scheduled_followups:
-                followup = scheduled_followups[0]
-            else:
-                # Create a new Case & Followup
-                case = Case(
-                    customer_id=customer.id,
-                    issue="متابعة جودة خدمة الإنترنت / الاتصال",
-                    description="AI Outbound Follow-up via Telegram Transport",
-                    status=CaseStatus.AI_FOLLOW_UP_SCHEDULED,
-                )
-                case = self.case_repo.create(case)
-
-                followup = AIFollowup(
-                    case_id=case.id,
-                    customer_id=customer.id,
-                    scheduled_at=datetime.now(timezone.utc),
-                    status=FollowupStatus.IN_PROGRESS,
-                    attempt_number=1,
-                )
-                followup = self.followup_repo.create(followup)
+            followup = self.followup_repo.create(followup)
         else:
-            followup = open_followups[0]
+            followup.status = FollowupStatus.IN_PROGRESS
+            self.followup_repo.update(followup)
 
-        # 3. Find or create Call row
+        # 5. Find or create OUTBOUND_AI Call row
         call = None
         if followup.call_id:
             call = self.call_repo.get_by_id(followup.call_id)
 
         if not call or call.outcome != CallOutcome.PENDING:
+            call = self.call_repo.get_pending_outbound_ai_call(case.id)
+
+        if not call:
             call = Call(
-                customer_id=customer.id,
-                case_id=followup.case_id,
+                customer_id=case.customer_id,
+                case_id=case.id,
                 call_type=CallType.OUTBOUND_AI,
-                started_at=datetime.now(timezone.utc),
+                started_at=now,
                 outcome=CallOutcome.PENDING,
             )
             call = self.call_repo.create(call)
-            followup.call_id = call.id
-            followup.status = FollowupStatus.IN_PROGRESS
-            self.followup_repo.update(followup)
 
-        return followup, call
+        followup.call_id = call.id
+        self.followup_repo.update(followup)
+
+        return followup, call, case
 
     def process_start_command(
         self,
@@ -142,25 +162,33 @@ class TelegramAdapter:
     ) -> None:
         """
         Handles the /start command from Telegram user.
-        Resets session state, sets up active follow-up & call records, and greets the user.
+        Binds to an existing eligible Case and greets the user with dynamic issue details.
+        NEVER creates a new Case.
         """
-        logger.info("[Telegram] Update received")
-        logger.info("[Telegram] Message type: start")
-        logger.info("[Telegram] Chat ID received: %s", chat_id)
+        logger.info("[Telegram] /start command received for chat %s", chat_id)
 
-        followup, call = self._get_or_create_session(chat_id, user_info)
+        followup, call, case = self._get_or_bind_session(chat_id, user_info)
+
+        if not followup or not case:
+            self.telegram_client.send_message(chat_id, NO_SCHEDULED_CASES_MSG)
+            logger.info("[Telegram] No eligible case found; informed tester without creating records.")
+            return
+
         followup.attempt_number = 1
         self.followup_repo.update(followup)
 
-        logger.info("[Telegram] Sending response")
+        # Dynamic greeting referencing the existing case's issue
+        greeting_text = self.ai_service.build_dynamic_greeting(case=case)
+
+        logger.info("[Telegram] Sending greeting for case %s: %r", case.id, greeting_text)
         if as_voice:
-            logger.info("[TTS] Generating audio (greeting)")
-            audio_bytes = self.tts_service.synthesize_speech(GREETING_TEXT)
-            logger.info("[TTS] Audio generated (size: %d bytes)", len(audio_bytes))
-            self.telegram_client.send_voice(chat_id, audio_bytes, caption=GREETING_TEXT)
+            audio_bytes = self.tts_service.synthesize_speech(greeting_text)
+            if audio_bytes:
+                self.telegram_client.send_voice(chat_id, audio_bytes, caption=greeting_text)
+            else:
+                self.telegram_client.send_message(chat_id, greeting_text)
         else:
-            self.telegram_client.send_message(chat_id, GREETING_TEXT)
-        logger.info("[Telegram] Response sent successfully")
+            self.telegram_client.send_message(chat_id, greeting_text)
 
     def process_text_message(
         self,
@@ -169,36 +197,32 @@ class TelegramAdapter:
         user_info: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
-        Handles incoming text messages from Telegram:
-        Telegram -> Webhook -> AI Classifier -> Call Flows -> DB Update -> Telegram Text Response
+        Handles incoming text messages from Telegram testing transport.
         """
-        logger.info("[Telegram] Update received")
-        logger.info("[Telegram] Message type: text")
-        logger.info("[Telegram] Chat ID received: %s", chat_id)
+        logger.info("[Telegram] Text message received for chat %s: %r", chat_id, text)
 
         if text.strip().startswith("/start"):
             self.process_start_command(chat_id, user_info, as_voice=False)
             return {"ok": True, "action": "start"}
 
-        followup, call = self._get_or_create_session(chat_id, user_info)
+        followup, call, case = self._get_or_bind_session(chat_id, user_info)
+
+        if not followup or not call:
+            self.telegram_client.send_message(chat_id, NO_SCHEDULED_CASES_MSG)
+            return {"ok": False, "error": "no_active_case"}
 
         # AI Classification
-        logger.info("[AI] Request sent: %r", text)
         result = classify_response(text)
-        logger.info("[AI] Response received: %s", result.value)
+        logger.info("[AI] Classified text %r as: %s", text, result.value)
 
         # Update Call transcript
-        if call:
-            current_transcript = call.transcript or ""
-            call.transcript = (current_transcript + f"\nCustomer: {text}").strip()
-            self.call_repo.update(call)
+        current_transcript = call.transcript or ""
+        call.transcript = (current_transcript + f"\nCustomer: {text}").strip()
+        self.call_repo.update(call)
 
         response_text = self._execute_call_flow(followup, call, result)
 
-        logger.info("[Telegram] Sending response")
         self.telegram_client.send_message(chat_id, response_text)
-        logger.info("[Telegram] Response sent successfully")
-
         return {"ok": True, "result": result.value, "response": response_text}
 
     def process_voice_message(
@@ -208,12 +232,10 @@ class TelegramAdapter:
         user_info: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
-        Handles incoming voice notes from Telegram:
-        Telegram Voice -> Webhook -> Download Audio -> STT -> AI Classifier -> Call Flows -> DB Update -> TTS -> Telegram Voice Response
+        Handles incoming voice messages from Telegram testing transport:
+        Download Audio -> STT -> Classifier -> Call Flow -> DB Update -> TTS -> Voice Response
         """
-        logger.info("[Telegram] Update received")
-        logger.info("[Telegram] Message type: voice")
-        logger.info("[Telegram] Chat ID received: %s", chat_id)
+        logger.info("[Telegram] Voice message received for chat %s (file_id: %s)", chat_id, file_id)
 
         # 1. Download voice audio from Telegram
         file_info = self.telegram_client.get_file(file_id)
@@ -232,27 +254,26 @@ class TelegramAdapter:
             filename=file_path.split("/")[-1] if "/" in file_path else "voice.oga",
         )
 
-        followup, call = self._get_or_create_session(chat_id, user_info)
+        followup, call, case = self._get_or_bind_session(chat_id, user_info)
+
+        if not followup or not call:
+            self.telegram_client.send_message(chat_id, NO_SCHEDULED_CASES_MSG)
+            return {"ok": False, "error": "no_active_case"}
 
         # 3. AI / Classification
-        logger.info("[AI] Request sent: %r", transcribed_text)
         result = classify_response(transcribed_text)
-        logger.info("[AI] Response received: %s", result.value)
+        logger.info("[AI] Classified voice transcript %r as: %s", transcribed_text, result.value)
 
         # Update Call transcript
-        if call:
-            current_transcript = call.transcript or ""
-            call.transcript = (current_transcript + f"\nCustomer (Voice): {transcribed_text}").strip()
-            self.call_repo.update(call)
+        current_transcript = call.transcript or ""
+        call.transcript = (current_transcript + f"\nCustomer (Voice): {transcribed_text}").strip()
+        self.call_repo.update(call)
 
         # 4. Call Flows
         response_text = self._execute_call_flow(followup, call, result)
 
-        # 5. Run TTS
+        # 5. Run TTS & Send response
         audio_response = self.tts_service.synthesize_speech(response_text)
-
-        # 6. Send Voice back to Telegram
-        logger.info("[Telegram] Sending response")
         if audio_response:
             self.telegram_client.send_voice(
                 chat_id=chat_id,
@@ -262,7 +283,6 @@ class TelegramAdapter:
             )
         else:
             self.telegram_client.send_message(chat_id, response_text)
-        logger.info("[Telegram] Response sent successfully")
 
         return {
             "ok": True,
@@ -278,24 +298,19 @@ class TelegramAdapter:
         result: FollowupResult,
     ) -> str:
         """
-        Executes the business logic / database updates from the existing call flow handlers.
+        Executes the business logic / database updates from the shared call flow handlers.
         """
         if result == FollowupResult.YES:
-            handle_yes(self.db, followup.id, call.id)
-            return GOODBYE_RESOLVED_TEXT
+            return handle_yes(self.db, followup.id, call.id)
 
         elif result == FollowupResult.NO:
-            handle_no(self.db, followup.id, call.id)
-            return GOODBYE_ESCALATE_TEXT
+            return handle_no(self.db, followup.id, call.id)
 
         else:
             # Unknown / ambiguous response
             attempt = followup.attempt_number or 1
-            if attempt < MAX_ATTEMPTS:
+            resp_text, is_retry = handle_unknown(self.db, followup.id, call.id, attempt=attempt)
+            if is_retry:
                 followup.attempt_number = attempt + 1
                 self.followup_repo.update(followup)
-                return NOT_UNDERSTOOD_TEXT
-            else:
-                # Out of retries: escalate to human agent
-                handle_no(self.db, followup.id, call.id)
-                return GOODBYE_ESCALATE_TEXT
+            return resp_text

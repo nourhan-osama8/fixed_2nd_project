@@ -1,3 +1,6 @@
-from app.telephony.webhooks import incoming, speech, status, telegram
+"""
+Telephony Webhooks Package.
+"""
+from app.telephony.webhooks import vonage, telegram
 
-__all__ = ["incoming", "speech", "status", "telegram"]
+__all__ = ["vonage", "telegram"]
