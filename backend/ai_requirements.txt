@@ -1,0 +1,37 @@
+# ============================================================
+# NileConnect AI — Standalone AI Requirements
+# ============================================================
+# This file covers ONLY the AI/Agent-specific packages.
+# The backend's full requirements.txt also includes these.
+#
+# Use this to set up a dedicated AI development environment:
+#   python -m venv ai_venv
+#   ai_venv\Scripts\activate
+#   pip install -r ai_requirements.txt
+# ============================================================
+
+# ── LLM ────────────────────────────────────────────────────
+groq>=1.0.0
+
+# ── Web Search ─────────────────────────────────────────────
+tavily-python>=0.5.0
+
+# ── LangChain tool wrappers ─────────────────────────────────
+langchain-core>=0.3.0
+
+# ── Embeddings (local, no API cost) ────────────────────────
+sentence-transformers>=3.0.0
+
+# ── Vector store ────────────────────────────────────────────
+faiss-cpu>=1.7.0
+
+# ── Document parsing ─────────────────────────────────────────
+pypdf>=4.0.0
+python-docx>=1.1.0       # DOCX parsing for RAG
+
+# ── Utilities ────────────────────────────────────────────────
+numpy>=1.24.0
+psycopg2-binary>=2.9.0      # for database_query tool (PostgreSQL)
+python-dotenv>=1.0.0        # load .env config
+pydantic>=2.0.0
+pydantic-settings>=2.0.0

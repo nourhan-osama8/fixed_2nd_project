@@ -8,8 +8,9 @@
 > **Database:** PostgreSQL\
 > **Phase 1 scope:** Frontend + Backend + database + authentication +
 > case/call management + document management\
-> **AI scope:** Prepared as interfaces/placeholders only; Agentic RAG
-> and outbound AI calling will be implemented in the next phase.
+> **Phase 2 scope:** Agentic RAG AI engine — Groq LLM + FAISS vector
+> store + Tavily web search + SQL tool + RAG pipeline — fully
+> implemented and installed in `backend/ai_venv`.
 
 ------------------------------------------------------------------------
 
@@ -87,13 +88,14 @@ prepares the backend and frontend that the AI layer will use.
                               v
                      File Storage / KB
 
-          Future AI layer (Phase 2)
+           AI Layer (Phase 2) ✅ Implemented
                               |
           +-------------------+-------------------+
           |                   |                   |
           v                   v                   v
-    Agentic RAG          AI Outbound Call      AI Tools
-    SQL + RAG             Telephony             APIs
+    Agentic RAG          AI Tools            Web Search
+  FAISS + Groq        SQL + PostgreSQL        Tavily
+    (ai_venv)            (ai_venv)            (ai_venv)
 ```
 
 ------------------------------------------------------------------------
@@ -480,10 +482,19 @@ backend/
 |   +-- workers/
 |       +-- scheduler.py
 |       +-- tasks.py
+|   +-- ai/                      <- AI engine (Phase 2) ✅
+|       +-- agent/               <- Agentic loop
+|       +-- llm/                 <- Groq LLM client
+|       +-- rag/                 <- FAISS RAG pipeline
+|       +-- tools/               <- SQL, RAG, web search tools
+|       +-- memory/              <- conversation memory
+|       +-- guardrails/          <- safety filters
+|       +-- observability/       <- logging & tracing
 |
 +-- tests/
 |
-+-- requirements.txt
++-- requirements.txt          <- backend-only packages (no AI deps)
++-- ai_requirements.txt       <- AI-only packages (Phase 2) ✅
 +-- Dockerfile
 +-- .env.example
 ```
@@ -790,12 +801,13 @@ At this stage, the system is already useful without AI.
 
 ------------------------------------------------------------------------
 
-# 19. Phase 2 --- AI Integration
+# 19. Phase 2 — AI Integration ✅ Implemented
 
-After the frontend/backend foundation is stable, add:
+The AI engine is fully implemented in `backend/app/ai/` and installed
+in `backend/ai_venv/`. The following components are live:
 
 ``` text
-                    AI Agent
+                    AI Agent (Groq LLM)
                        |
           +------------+------------+
           |            |            |
@@ -803,27 +815,35 @@ After the frontend/backend foundation is stable, add:
         SQL           RAG          Tools
           |            |            |
           v            v            v
-     PostgreSQL    Hybrid Search   APIs
-                       |
-                Vector DB + BM25
-                       |
-                    Reranker
-                       |
-                       v
-                      LLM
+     PostgreSQL    FAISS Vector   Tavily
+                   + Sentence     Web Search
+                   Transformers
+                        |
+                   sentence-transformers
+                   (all-MiniLM-L6-v2)
 ```
 
-Recommended RAG approach:
+**AI venv location:** `backend/ai_venv/` ✅ installed
 
-**Agentic RAG + Hybrid Retrieval + Reranker**
+**AI requirements file:** `backend/ai_requirements.txt` ✅
 
-Not Graph RAG initially.
+**Key packages:**
+
+| Package | Version | Role |
+|---|---|---|
+| `groq` | 1.6.0 | LLM inference |
+| `sentence-transformers` | 5.7.0 | Text embeddings |
+| `faiss-cpu` | 1.15.0 | Vector similarity search |
+| `tavily-python` | 0.7.27 | Web search tool |
+| `langchain-core` | 1.5.5 | Tool schemas |
+| `pypdf` | 6.16.1 | PDF parsing for RAG |
+| `torch` | 2.13.0 | Embedding model backend |
 
 The Agent decides whether a question needs:
 
 -   SQL/customer data
 -   RAG/company knowledge
--   a tool/API
+-   a web search tool
 -   multiple sources
 
 ------------------------------------------------------------------------
@@ -904,12 +924,12 @@ Object storage later if needed
 ## Future AI
 
 ``` text
-LLM
-Embeddings
-Vector Database
-Hybrid Search
-Reranker
-Agentic RAG
+LLM (Groq)                    ✅ implemented
+Embeddings (sentence-transformers) ✅ implemented
+Vector Database (FAISS)        ✅ implemented
+Web Search (Tavily)            ✅ implemented
+Agentic RAG                    ✅ implemented
+Hybrid Search / Reranker       planned
 ```
 
 ## Future Telephony
@@ -994,17 +1014,17 @@ enough for the demo.
 
 **Build order:**
 
-1.  FastAPI project
-2.  PostgreSQL database
-3.  Authentication + RBAC
-4.  Customers
-5.  Cases
-6.  Calls
-7.  Follow-ups
-8.  Documents
-9.  Streamlit dashboards
-10. Connect Streamlit → FastAPI
-11. Test complete backend/frontend workflow
-12. Then start the AI layer
-13. Then add Agentic RAG
-14. Then add real outbound calling
+1.  FastAPI project ✅
+2.  PostgreSQL database ✅
+3.  Authentication + RBAC ✅
+4.  Customers ✅
+5.  Cases ✅
+6.  Calls ✅
+7.  Follow-ups ✅
+8.  Documents ✅
+9.  Streamlit dashboards ✅
+10. Connect Streamlit → FastAPI ✅
+11. Test complete backend/frontend workflow ✅
+12. AI layer — Groq LLM + FAISS + Tavily ✅ (Phase 2 complete)
+13. Agentic RAG ✅ (Phase 2 complete)
+14. Real outbound calling (Phase 3 — planned)

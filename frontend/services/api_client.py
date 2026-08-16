@@ -104,3 +104,32 @@ def upload_file(endpoint: str, file_bytes: bytes, filename: str, content_type: s
         return {"error": detail, "status_code": e.response.status_code}
     except Exception as e:
         return {"error": str(e)}
+
+
+def ai_post(endpoint: str, data: dict) -> Any:
+    """
+    Like post(), but uses a much longer timeout (120 s) for AI endpoints
+    that run multi-step agentic reasoning and can legitimately take time.
+    """
+    try:
+        resp = requests.post(
+            f"{BACKEND_URL}{endpoint}",
+            headers=_headers(),
+            json=data,
+            timeout=120,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except requests.exceptions.Timeout:
+        return {"error": "The AI assistant is taking longer than expected. Please try again or rephrase your question."}
+    except requests.exceptions.ConnectionError:
+        return {"error": "Cannot connect to the backend. Make sure the API server is running."}
+    except requests.exceptions.HTTPError as e:
+        try:
+            detail = e.response.json().get("detail", str(e))
+        except Exception:
+            detail = str(e)
+        return {"error": detail, "status_code": e.response.status_code}
+    except Exception as e:
+        return {"error": str(e)}
+
