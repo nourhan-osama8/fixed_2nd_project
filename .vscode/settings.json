@@ -1,0 +1,17 @@
+{
+  // ── Python interpreter ─────────────────────────────────────────────────────
+  // AI files (groq, faiss, sentence-transformers, etc.) require ai_venv.
+  // If you open a plain backend file, switch to backend/venv/Scripts/python.exe
+  "python.defaultInterpreterPath": "${workspaceFolder}/backend/ai_venv/Scripts/python.exe",
+
+  // ── Pylance extra paths ────────────────────────────────────────────────────
+  // Lets Pylance resolve `from app.xxx import ...` from the backend root
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/backend"
+  ],
+
+  // ── Per-file interpreter overrides ─────────────────────────────────────────
+  // AI source files → ai_venv (has groq, faiss, sentence-transformers, etc.)
+  // Backend source files → venv  (has fastapi, sqlalchemy, etc.)
+  "python.analysis.pythonPath": "${workspaceFolder}/backend/ai_venv/Scripts/python.exe"
+}

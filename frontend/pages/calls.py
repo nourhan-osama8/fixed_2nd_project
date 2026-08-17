@@ -46,24 +46,44 @@ def show() -> None:
                 icon = {"INBOUND_HUMAN": "📥", "OUTBOUND_HUMAN": "📤", "OUTBOUND_AI": "🤖"}.get(
                     call.get("call_type", ""), "📞"
                 )
-                with st.expander(
-                    f"{icon} {call.get('call_type','').replace('_',' ')}  |  {format_datetime(call.get('started_at'))}  |  {status_badge(call.get('outcome',''))}",
-                    expanded=False,
-                ):
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        st.write(f"**Type:** {call.get('call_type','—').replace('_',' ').title()}")
-                        st.write(f"**Started:** {format_datetime(call.get('started_at'))}")
-                        st.write(f"**Ended:** {format_datetime(call.get('ended_at'))}")
-                        st.write(f"**Duration:** {format_duration(call.get('duration'))}")
-                    with c2:
-                        st.write(f"**Outcome:** {status_badge(call.get('outcome','—'))}")
-                        st.write(f"**Customer ID:** `{str(call.get('customer_id','—'))[:8]}...`")
-                    if call.get("summary"):
-                        st.write(f"**Summary:** {call.get('summary')}")
-                    if call.get("transcript"):
-                        with st.expander("📄 Transcript"):
-                            st.text(call.get("transcript"))
+                call_id = str(call.get("id", ""))
+                toggle_key = f"show_transcript_{call_id}"
+                if toggle_key not in st.session_state:
+                    st.session_state[toggle_key] = False
+
+                with st.container(border=True):
+                    header_col, btn_col = st.columns([4, 1])
+                    with header_col:
+                        st.markdown(
+                            f"**{icon} {call.get('call_type','').replace('_',' ').title()}** &nbsp;|&nbsp; "
+                            f"{format_datetime(call.get('started_at'))} &nbsp;|&nbsp; "
+                            f"{status_badge(call.get('outcome',''))}",
+                            unsafe_allow_html=True,
+                        )
+                    with btn_col:
+                        expand_key = f"expand_{call_id}"
+                        if expand_key not in st.session_state:
+                            st.session_state[expand_key] = False
+                        if st.button("▼ Details" if not st.session_state[expand_key] else "▲ Hide", key=f"expbtn_{call_id}"):
+                            st.session_state[expand_key] = not st.session_state[expand_key]
+
+                    if st.session_state.get(f"expand_{call_id}", False):
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.write(f"**Type:** {call.get('call_type','—').replace('_',' ').title()}")
+                            st.write(f"**Started:** {format_datetime(call.get('started_at'))}")
+                            st.write(f"**Ended:** {format_datetime(call.get('ended_at'))}")
+                            st.write(f"**Duration:** {format_duration(call.get('duration'))}")
+                        with c2:
+                            st.write(f"**Outcome:** {status_badge(call.get('outcome','—'))}")
+                            st.write(f"**Customer ID:** `{str(call.get('customer_id','—'))[:8]}...`")
+                        if call.get("summary"):
+                            st.write(f"**Summary:** {call.get('summary')}")
+                        if call.get("transcript"):
+                            if st.button("📄 Show/Hide Transcript", key=f"btn_{call_id}"):
+                                st.session_state[toggle_key] = not st.session_state[toggle_key]
+                            if st.session_state[toggle_key]:
+                                st.text_area("Transcript", value=call.get("transcript"), height=200, disabled=True, key=f"ta_{call_id}")
 
     # ── Tab 2: Record Call ────────────────────────────────────────
     with tab2:

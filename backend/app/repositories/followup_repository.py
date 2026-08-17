@@ -1,6 +1,6 @@
 from typing import Optional, List
 from uuid import UUID
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.models.ai_followup import AIFollowup
 from app.core.constants import FollowupStatus
 
@@ -10,7 +10,12 @@ class FollowupRepository:
         self.db = db
 
     def get_by_id(self, followup_id: UUID) -> Optional[AIFollowup]:
-        return self.db.query(AIFollowup).filter(AIFollowup.id == followup_id).first()
+        return (
+            self.db.query(AIFollowup)
+            .options(joinedload(AIFollowup.case), joinedload(AIFollowup.customer))
+            .filter(AIFollowup.id == followup_id)
+            .first()
+        )
 
     def get_all(
         self,
@@ -20,7 +25,9 @@ class FollowupRepository:
         customer_id: Optional[UUID] = None,
         status: Optional[FollowupStatus] = None,
     ) -> List[AIFollowup]:
-        query = self.db.query(AIFollowup)
+        query = self.db.query(AIFollowup).options(
+            joinedload(AIFollowup.case), joinedload(AIFollowup.customer)
+        )
         if case_id:
             query = query.filter(AIFollowup.case_id == case_id)
         if customer_id:
@@ -28,6 +35,19 @@ class FollowupRepository:
         if status:
             query = query.filter(AIFollowup.status == status)
         return query.order_by(AIFollowup.scheduled_at.desc()).offset(skip).limit(limit).all()
+
+    def get_active_by_case_id(self, case_id: UUID) -> Optional[AIFollowup]:
+        """Returns in-progress or scheduled followup for a given case to prevent duplicates."""
+        return (
+            self.db.query(AIFollowup)
+            .options(joinedload(AIFollowup.case), joinedload(AIFollowup.customer))
+            .filter(
+                AIFollowup.case_id == case_id,
+                AIFollowup.status.in_([FollowupStatus.IN_PROGRESS, FollowupStatus.SCHEDULED]),
+            )
+            .order_by(AIFollowup.scheduled_at.asc())
+            .first()
+        )
 
     def count(
         self,
@@ -48,7 +68,7 @@ class FollowupRepository:
         self.db.add(followup)
         self.db.commit()
         self.db.refresh(followup)
-        return followup
+        return self.get_by_id(followup.id)
 
     def update(self, followup: AIFollowup) -> AIFollowup:
         self.db.commit()

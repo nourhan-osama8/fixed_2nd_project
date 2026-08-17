@@ -70,7 +70,7 @@ def show() -> None:
 
     st.markdown("---")
     st.markdown("#### 🚀 Quick Actions")
-    qc1, qc2, qc3 = st.columns(3)
+    qc1, qc2, qc3, qc4 = st.columns(4)
     with qc1:
         if st.button("➕ New Customer", use_container_width=True):
             st.session_state.current_page = "customers"
@@ -82,4 +82,8 @@ def show() -> None:
     with qc3:
         if st.button("📚 Knowledge Base", use_container_width=True):
             st.session_state.current_page = "documents"
+            st.rerun()
+    with qc4:
+        if st.button("🏆 Success Metrics", use_container_width=True):
+            st.session_state.current_page = "success_metrics"
             st.rerun()
