@@ -20,22 +20,44 @@ from app.telephony.vonage.response import (
 )
 
 
+def unique_test_phone():
+    """Generate a unique phone value for each test run."""
+    return f"TEST_{uuid4().hex[:10]}"
+
+
 def test_handle_yes():
     """Verify handle_yes marks call resolved, followup YES completed, and case resolved."""
     db = SessionLocal()
-    customer = Customer(name="Flow Test User 1", phone="01055550001")
+    customer = Customer(
+        name="Flow Test User 1",
+        phone=unique_test_phone(),
+    )
     db.add(customer)
     db.commit()
 
-    case = Case(customer_id=customer.id, issue="عطل مؤقت", status=CaseStatus.AI_FOLLOW_UP_SCHEDULED)
+    case = Case(
+        customer_id=customer.id,
+        issue="عطل مؤقت",
+        status=CaseStatus.AI_FOLLOW_UP_SCHEDULED,
+    )
     db.add(case)
     db.commit()
 
-    followup = AIFollowup(case_id=case.id, customer_id=customer.id, scheduled_at=case.created_at, status=FollowupStatus.IN_PROGRESS)
+    followup = AIFollowup(
+        case_id=case.id,
+        customer_id=customer.id,
+        scheduled_at=case.created_at,
+        status=FollowupStatus.IN_PROGRESS,
+    )
     db.add(followup)
     db.commit()
 
-    call = Call(customer_id=customer.id, case_id=case.id, call_type="OUTBOUND_AI", outcome=CallOutcome.PENDING)
+    call = Call(
+        customer_id=customer.id,
+        case_id=case.id,
+        call_type="OUTBOUND_AI",
+        outcome=CallOutcome.PENDING,
+    )
     db.add(call)
     db.commit()
 
@@ -59,19 +81,36 @@ def test_handle_yes():
 def test_handle_no():
     """Verify handle_no marks call escalated, followup NO completed, and case NEEDS_HUMAN."""
     db = SessionLocal()
-    customer = Customer(name="Flow Test User 2", phone="01055550002")
+    customer = Customer(
+        name="Flow Test User 2",
+        phone=unique_test_phone(),
+    )
     db.add(customer)
     db.commit()
 
-    case = Case(customer_id=customer.id, issue="توقف الخدمة", status=CaseStatus.AI_FOLLOW_UP_SCHEDULED)
+    case = Case(
+        customer_id=customer.id,
+        issue="توقف الخدمة",
+        status=CaseStatus.AI_FOLLOW_UP_SCHEDULED,
+    )
     db.add(case)
     db.commit()
 
-    followup = AIFollowup(case_id=case.id, customer_id=customer.id, scheduled_at=case.created_at, status=FollowupStatus.IN_PROGRESS)
+    followup = AIFollowup(
+        case_id=case.id,
+        customer_id=customer.id,
+        scheduled_at=case.created_at,
+        status=FollowupStatus.IN_PROGRESS,
+    )
     db.add(followup)
     db.commit()
 
-    call = Call(customer_id=customer.id, case_id=case.id, call_type="OUTBOUND_AI", outcome=CallOutcome.PENDING)
+    call = Call(
+        customer_id=customer.id,
+        case_id=case.id,
+        call_type="OUTBOUND_AI",
+        outcome=CallOutcome.PENDING,
+    )
     db.add(call)
     db.commit()
 
@@ -94,29 +133,56 @@ def test_handle_no():
 def test_handle_unknown_retry_and_exhaustion():
     """Verify handle_unknown retries on attempt 1 and escalates on attempt 2."""
     db = SessionLocal()
-    customer = Customer(name="Flow Test User 3", phone="01055550003")
+    customer = Customer(
+        name="Flow Test User 3",
+        phone=unique_test_phone(),
+    )
     db.add(customer)
     db.commit()
 
-    case = Case(customer_id=customer.id, issue="استفسار غير واضح", status=CaseStatus.AI_FOLLOW_UP_SCHEDULED)
+    case = Case(
+        customer_id=customer.id,
+        issue="استفسار غير واضح",
+        status=CaseStatus.AI_FOLLOW_UP_SCHEDULED,
+    )
     db.add(case)
     db.commit()
 
-    followup = AIFollowup(case_id=case.id, customer_id=customer.id, scheduled_at=case.created_at, status=FollowupStatus.IN_PROGRESS)
+    followup = AIFollowup(
+        case_id=case.id,
+        customer_id=customer.id,
+        scheduled_at=case.created_at,
+        status=FollowupStatus.IN_PROGRESS,
+    )
     db.add(followup)
     db.commit()
 
-    call = Call(customer_id=customer.id, case_id=case.id, call_type="OUTBOUND_AI", outcome=CallOutcome.PENDING)
+    call = Call(
+        customer_id=customer.id,
+        case_id=case.id,
+        call_type="OUTBOUND_AI",
+        outcome=CallOutcome.PENDING,
+    )
     db.add(call)
     db.commit()
 
     # Attempt 1 -> should ask to repeat
-    resp_text, is_retry = handle_unknown(db, followup.id, call.id, attempt=1)
+    resp_text, is_retry = handle_unknown(
+        db,
+        followup.id,
+        call.id,
+        attempt=1,
+    )
     assert resp_text == NOT_UNDERSTOOD_TEXT
     assert is_retry is True
 
     # Attempt 2 -> out of retries, should escalate to human
-    resp_text_2, is_retry_2 = handle_unknown(db, followup.id, call.id, attempt=2)
+    resp_text_2, is_retry_2 = handle_unknown(
+        db,
+        followup.id,
+        call.id,
+        attempt=2,
+    )
     assert resp_text_2 == GOODBYE_ESCALATE_TEXT
     assert is_retry_2 is False
 

@@ -212,4 +212,32 @@ class SimpleRAG:
 
 # ── Module-level singleton ────────────────────────────────────────────────────
 
-rag: SimpleRAG = SimpleRAG()
+# Module-level singleton.
+# Create the RAG object lazily so importing app.main
+# does not load the SentenceTransformer model during tests/startup.
+_rag: SimpleRAG | None = None
+_rag_lock = threading.Lock()
+
+
+def get_rag() -> SimpleRAG:
+    """Return the shared RAG instance, creating it on first use."""
+    global _rag
+
+    if _rag is None:
+        with _rag_lock:
+            if _rag is None:
+                _rag = SimpleRAG()
+
+    return _rag
+
+
+class LazyRAG:
+    """
+    Backward-compatible lazy proxy for the module-level `rag`.
+    """
+
+    def __getattr__(self, name: str):
+        return getattr(get_rag(), name)
+
+
+rag = LazyRAG()

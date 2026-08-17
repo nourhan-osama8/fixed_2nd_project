@@ -183,3 +183,15 @@ async def handle_vonage_event(
                 followup_repo.update(followup)
 
     return {"ok": True}
+
+#add fallback
+
+@router.api_route("/fallback", methods=["GET", "POST"])
+async def handle_vonage_fallback():
+    """
+    Fallback webhook used by Vonage if the primary Answer/Event webhook
+    cannot be reached or returns an invalid response.
+    """
+    logger.warning("Vonage fallback webhook invoked")
+
+    return JSONResponse(content=build_no_answer_ncco())
